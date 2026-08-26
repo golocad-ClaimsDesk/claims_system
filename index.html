@@ -282,7 +282,7 @@
   <div class="modal">
     <h2>Connect to your Google Sheet</h2>
     <p style="font-size:12.5px;color:var(--stamp);line-height:1.5;margin-top:-6px;">
-      Paste the Web App URL from your Apps Script deployment (Deploy → New deployment → Web app). Once set, new incidents logged in the Tracker will also be appended to your live <code>CLAIMS WH</code> sheet.
+      Paste your Apps Script Web App URL. Refresh will load it in a hidden frame and read the data via postMessage — this keeps IR Link / Credit Note hyperlinks intact, unlike a plain script-tag fetch.
     </p>
     <div class="field">
       <label>Apps Script Web App URL</label>
@@ -500,7 +500,7 @@ function renderConfirmed(){
 ['whSearch','whAgencyFilter','whStatusFilter'].forEach(id => document.getElementById(id).addEventListener('input', renderTracker));
 ['ccSearch','ccStatusFilter'].forEach(id => document.getElementById(id).addEventListener('input', renderConfirmed));
 
-// ---- Sheet connection (Apps Script write-back) ----
+// ---- Sheet connection ----
 const SCRIPT_URL_KEY = 'claims_apps_script_url';
 let scriptUrl = null;
 
@@ -512,16 +512,20 @@ async function loadScriptUrl(){
   updateConnectStatus();
 }
 
-function updateConnectStatus(){
+function updateConnectStatus(msg, color){
   const el = document.getElementById('connectStatus');
+  el.style.display = 'block';
+  if(msg){
+    el.style.color = color || 'var(--stamp)';
+    el.textContent = msg;
+    return;
+  }
   if(scriptUrl){
-    el.style.display = 'block';
     el.style.color = 'var(--teal)';
-    el.textContent = '● Connected — new incidents will also be written to your live sheet.';
+    el.textContent = '● Connected. Click "↻ Refresh from sheet" to pull live data (including IR/Credit Note links).';
   } else {
-    el.style.display = 'block';
     el.style.color = 'var(--stamp)';
-    el.textContent = '○ Not connected — new incidents save to this browser only. Click "Connect sheet" to enable write-back.';
+    el.textContent = '○ Not connected. Click "⚙ Connect sheet" and paste your Apps Script Web App URL.';
   }
 }
 
@@ -543,46 +547,32 @@ document.getElementById('saveConnect').addEventListener('click', async () => {
   document.getElementById('connectOverlay').classList.remove('show');
 });
 
-// ---- JSONP helper (bypasses CORS by loading a <script> tag instead of fetch) ----
-function jsonp(url, params, timeoutMs){
+// ---- Refresh via hidden iframe + postMessage (avoids CORS/CORP that blocks <script> tags) ----
+function fetchViaIframe(url, timeoutMs){
   return new Promise((resolve, reject) => {
-    const cbName = 'jsonp_cb_' + Math.random().toString(36).slice(2);
-    const script = document.createElement('script');
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
     let timeoutId;
 
     function cleanup(){
       clearTimeout(timeoutId);
-      delete window[cbName];
-      script.remove();
+      window.removeEventListener('message', onMessage);
+      iframe.remove();
+    }
+    function onMessage(event){
+      if(!event.data || event.data.source !== 'claims-system') return;
+      cleanup();
+      resolve(event.data.payload);
     }
 
-    window[cbName] = (data) => { cleanup(); resolve(data); };
-    script.onerror = () => { cleanup(); reject(new Error('Network error reaching the Apps Script URL')); };
-    timeoutId = setTimeout(() => { cleanup(); reject(new Error('Request timed out')); }, timeoutMs || 15000);
+    window.addEventListener('message', onMessage);
+    timeoutId = setTimeout(() => { cleanup(); reject(new Error('Request timed out — no response from the sheet.')); }, timeoutMs || 15000);
 
-    const qs = new URLSearchParams({ ...params, callback: cbName }).toString();
-    script.src = url + (url.includes('?') ? '&' : '?') + qs;
-    document.body.appendChild(script);
+    iframe.src = url;
+    document.body.appendChild(iframe);
   });
 }
 
-async function pushToSheet(entry){
-  if(!scriptUrl) return { attempted: false };
-  try{
-    const json = await jsonp(scriptUrl, {
-      action: 'add',
-      claimId: entry.id, orderNumber: entry.order, sku: entry.sku, brand: entry.brand,
-      department: entry.dept, agency: entry.agency, personnel: entry.personnel,
-      dateReported: entry.dateReported, dateDiscovery: entry.dateDiscovery,
-      incidentType: entry.incidentType, estCost: entry.estCost == null ? '' : entry.estCost
-    });
-    return { attempted: true, ok: !!(json && json.success), raw: json };
-  }catch(err){
-    return { attempted: true, ok: false, error: err.message };
-  }
-}
-
-// ---- Refresh from live sheet ----
 function mapLiveRowToEntry(row){
   const num = (v) => {
     if(v === '' || v === null || v === undefined) return null;
@@ -614,8 +604,6 @@ function mapLiveRowToEntry(row){
     cost: num(row['Cost']),
     remarks: String(row['Remarks from Agency\n[Valid or Not Valid]'] || ''),
     reason: String(row['Reason from Agency'] || ''),
-    // These now come straight from the Apps Script response (extracted via getRichTextValues),
-    // so IR Link proof links stay intact after a live refresh.
     irLink: row.irLink || null,
     irLinkLocad: row.irLinkLocad || null,
     irLinkAgency: row.irLinkAgency || null
@@ -624,32 +612,26 @@ function mapLiveRowToEntry(row){
 
 document.getElementById('refreshBtn').addEventListener('click', async () => {
   const btn = document.getElementById('refreshBtn');
-  const statusEl = document.getElementById('connectStatus');
   if(!scriptUrl){
-    statusEl.style.display = 'block';
-    statusEl.style.color = 'var(--red)';
-    statusEl.textContent = '⚠ Connect your sheet first (⚙ Connect sheet) before refreshing.';
+    updateConnectStatus('⚠ Connect your sheet first (⚙ Connect sheet) before refreshing.', 'var(--red)');
     return;
   }
   const original = btn.textContent;
   btn.textContent = 'Refreshing…';
   btn.disabled = true;
   try{
-    const json = await jsonp(scriptUrl, { action: 'list' });
+    const url = scriptUrl + (scriptUrl.includes('?') ? '&' : '?') + 'action=list&embed=1';
+    const json = await fetchViaIframe(url);
     if(json && json.success && Array.isArray(json.rows)){
       whData = json.rows.map(mapLiveRowToEntry);
       renderTracker();
       populateFilters();
-      statusEl.style.display = 'block';
-      statusEl.style.color = 'var(--teal)';
-      statusEl.textContent = `✓ Refreshed — pulled ${whData.length} rows live from your sheet just now.`;
+      updateConnectStatus(`✓ Refreshed — pulled ${whData.length} rows live, links included.`, 'var(--teal)');
     } else {
       throw new Error((json && json.error) || 'Unexpected response');
     }
   }catch(err){
-    statusEl.style.display = 'block';
-    statusEl.style.color = 'var(--red)';
-    statusEl.textContent = '✗ Refresh failed: ' + err.message + '. Make sure the Apps Script is redeployed with the latest doGet code.';
+    updateConnectStatus('✗ Refresh failed: ' + err.message, 'var(--red)');
   }finally{
     btn.textContent = original;
     btn.disabled = false;
@@ -675,27 +657,16 @@ document.getElementById('saveModal').addEventListener('click', async () => {
     incidentType: document.getElementById('f_type').value,
     estCost: parseFloat(document.getElementById('f_cost').value) || null,
     debitNote: '', status: 'Pending', currentStatus: 'For Validation',
-    cost: null, remarks: '', reason: ''
+    cost: null, remarks: '', reason: '',
+    irLink: null, irLinkLocad: null, irLinkAgency: null
   };
   whData.push(entry);
   await saveLocalEntry(entry);
   document.getElementById('modalOverlay').classList.remove('show');
   ['f_id','f_order','f_brand','f_type','f_cost'].forEach(id => document.getElementById(id).value = '');
   renderTracker();
+  populateFilters();
   document.querySelector('.tab[data-view="tracker"]').click();
-
-  const pushResult = await pushToSheet(entry);
-  const el = document.getElementById('connectStatus');
-  el.style.display = 'block';
-  if(!pushResult.attempted){
-    // not connected — status already shows the "not connected" message
-  } else if(pushResult.ok){
-    el.style.color = 'var(--teal)';
-    el.textContent = '✓ Saved locally and written to your live Google Sheet.';
-  } else {
-    el.style.color = 'var(--red)';
-    el.textContent = '✓ Saved locally, but write-back to the sheet failed (' + (pushResult.error || 'check Apps Script deployment') + '). This preview sandbox may be blocking the request — try opening this HTML file directly in a regular browser tab instead.';
-  }
 });
 
 // ---- Init ----
