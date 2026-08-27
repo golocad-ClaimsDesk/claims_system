@@ -216,7 +216,7 @@
       <div class="table-wrap">
         <table>
           <thead><tr>
-            <th>Claim ID</th><th>Order #</th><th>Date Reported</th><th>Agency</th><th>Brand</th>
+            <th>Claim ID</th><th>Order #</th><th>Date Reported</th><th>Agency</th><th>Brand</th><th>Personnel</th>
             <th>Incident type</th><th>Est. cost</th><th>72h window</th><th>Status</th><th>IR Link</th>
           </tr></thead>
           <tbody id="whTableBody"></tbody>
@@ -488,6 +488,7 @@ function renderTracker(){
       <td>${r.dateReported || '—'}</td>
       <td>${r.agency}</td>
       <td>${r.brand}</td>
+      <td>${r.personnel || '—'}</td>
       <td>${r.incidentType}</td>
       <td>${fmtPHP(r.estCost)}</td>
       <td>${r.window72 || '—'}</td>
@@ -728,8 +729,8 @@ function getFilteredCcData(){
 
 document.getElementById('downloadWhBtn').addEventListener('click', () => {
   const rows = getFilteredWhData();
-  const headers = ['Claim ID','Order #','Date Reported','Agency','Brand','Incident Type','Est. Cost (PHP)','72h Window','Current Status'];
-  const data = rows.map(r => [r.id, r.order, r.dateReported, r.agency, r.brand, r.incidentType, r.estCost, r.window72, r.currentStatus]);
+  const headers = ['Claim ID','Order #','Date Reported','Agency','Brand','Personnel','Incident Type','Est. Cost (PHP)','72h Window','Current Status'];
+  const data = rows.map(r => [r.id, r.order, r.dateReported, r.agency, r.brand, r.personnel, r.incidentType, r.estCost, r.window72, r.currentStatus]);
   const date = new Date().toISOString().slice(0,10);
   downloadCsv(`claims_wh_${date}.csv`, headers, data);
 });
