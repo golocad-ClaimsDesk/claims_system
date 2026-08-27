@@ -209,13 +209,14 @@
         <input type="text" id="whSearch" placeholder="Search claim ID, order #, SKU, personnel...">
         <select id="whAgencyFilter"><option value="">All agencies</option></select>
         <select id="whStatusFilter"><option value="">All statuses</option></select>
+        <button class="btn ghost" id="downloadWhBtn">⬇ Download CSV</button>
         <button class="btn" id="addClaimBtn">+ Log new incident</button>
       </div>
       <div class="row-count" id="whCount"></div>
       <div class="table-wrap">
         <table>
           <thead><tr>
-            <th>Claim ID</th><th>Order #</th><th>Agency</th><th>Brand</th>
+            <th>Claim ID</th><th>Order #</th><th>Date Reported</th><th>Agency</th><th>Brand</th>
             <th>Incident type</th><th>Est. cost</th><th>72h window</th><th>Status</th><th>IR Link</th>
           </tr></thead>
           <tbody id="whTableBody"></tbody>
@@ -228,6 +229,7 @@
       <div class="toolbar">
         <input type="text" id="ccSearch" placeholder="Search claim ID, order #, agency...">
         <select id="ccStatusFilter"><option value="">All statuses</option></select>
+        <button class="btn ghost" id="downloadCcBtn">⬇ Download CSV</button>
       </div>
       <div class="row-count" id="ccCount"></div>
       <div class="table-wrap">
@@ -475,6 +477,7 @@ function renderTracker(){
     tr.innerHTML = `
       <td>${r.id}</td>
       <td>${r.order}</td>
+      <td>${r.dateReported || '—'}</td>
       <td>${r.agency}</td>
       <td>${r.brand}</td>
       <td>${r.incidentType}</td>
@@ -664,6 +667,71 @@ document.getElementById('refreshBtn').addEventListener('click', async () => {
     btn.textContent = original;
     btn.disabled = false;
   }
+});
+
+// ---- CSV download (respects current filters/search) ----
+function downloadCsv(filename, headers, rows){
+  const escapeCell = (v) => {
+    const s = (v === null || v === undefined) ? '' : String(v);
+    if(/[",\n]/.test(s)) return '"' + s.replace(/"/g,'""') + '"';
+    return s;
+  };
+  const lines = [headers.map(escapeCell).join(',')];
+  rows.forEach(row => lines.push(row.map(escapeCell).join(',')));
+  const csvContent = lines.join('\r\n');
+  const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function getFilteredWhData(){
+  const q = document.getElementById('whSearch').value.toLowerCase();
+  const agency = document.getElementById('whAgencyFilter').value;
+  const status = document.getElementById('whStatusFilter').value;
+  return whData.filter(r => {
+    if(agency && r.agency !== agency) return false;
+    if(status && r.currentStatus !== status) return false;
+    if(q){
+      const hay = [r.id, r.order, r.sku, r.personnel, r.incidentType].join(' ').toLowerCase();
+      if(!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+function getFilteredCcData(){
+  const q = document.getElementById('ccSearch').value.toLowerCase();
+  const status = document.getElementById('ccStatusFilter').value;
+  return ccData.filter(r => {
+    if(status && r.status !== status) return false;
+    if(q){
+      const hay = [r.id, r.order, r.agency].join(' ').toLowerCase();
+      if(!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+document.getElementById('downloadWhBtn').addEventListener('click', () => {
+  const rows = getFilteredWhData();
+  const headers = ['Claim ID','Order #','Date Reported','Agency','Brand','Incident Type','Est. Cost (PHP)','72h Window','Current Status'];
+  const data = rows.map(r => [r.id, r.order, r.dateReported, r.agency, r.brand, r.incidentType, r.estCost, r.window72, r.currentStatus]);
+  const date = new Date().toISOString().slice(0,10);
+  downloadCsv(`claims_wh_${date}.csv`, headers, data);
+});
+
+document.getElementById('downloadCcBtn').addEventListener('click', () => {
+  const rows = getFilteredCcData();
+  const headers = ['Claim ID','Order #','Reported Date','Agency','Incident Type','Cost (PHP)','Status','Finance Remarks','CN Number'];
+  const data = rows.map(r => [r.id, r.order, r.reportedDate, r.agency, r.incidentType, r.cost, r.status, r.financeRemarks, r.cnNumber]);
+  const date = new Date().toISOString().slice(0,10);
+  downloadCsv(`confirmed_claims_${date}.csv`, headers, data);
 });
 
 // ---- Add claim modal ----
