@@ -225,14 +225,15 @@
         <input type="text" id="ccSearch" placeholder="Search claim ID, order #, agency...">
         <select id="ccAgencyFilter"><option value="">All agencies</option></select>
         <select id="ccStatusFilter"><option value="">All statuses</option></select>
+        <select id="ccCnFilter"><option value="">All CN numbers</option></select>
         <button class="btn ghost" id="downloadCcBtn">⬇ Download CSV</button>
       </div>
       <div class="row-count" id="ccCount"></div>
       <div class="table-wrap">
         <table>
           <thead><tr>
-            <th>Claim ID</th><th>Order #</th><th>Reported</th><th>Agency</th>
-            <th>Incident type</th><th>Cost</th><th>Status</th><th>Finance remarks</th><th>CN number</th><th>Credit note</th>
+            <th>Claim ID</th><th>Order #</th><th>Deadline</th><th>Agency</th>
+            <th>Incident type</th><th>Cost</th><th>Status</th><th>Invoice No.</th><th>CN number</th><th>Credit note</th>
           </tr></thead>
           <tbody id="ccTableBody"></tbody>
         </table>
@@ -456,10 +457,12 @@ function populateFilters(){
   const sSel = document.getElementById('whStatusFilter');
   const ccAgencySel = document.getElementById('ccAgencyFilter');
   const ccSel = document.getElementById('ccStatusFilter');
+  const ccCnSel = document.getElementById('ccCnFilter');
   aSel.innerHTML = '<option value="">All agencies</option>';
   sSel.innerHTML = '<option value="">All statuses</option>';
   ccAgencySel.innerHTML = '<option value="">All agencies</option>';
   ccSel.innerHTML = '<option value="">All statuses</option>';
+  ccCnSel.innerHTML = '<option value="">All CN numbers</option>';
 
   const agencies = [...new Set(whData.map(r=>r.agency).filter(Boolean))].sort();
   const statuses = [...new Set(whData.map(r=>r.currentStatus).filter(Boolean))].sort();
@@ -470,6 +473,8 @@ function populateFilters(){
   ccAgencies.forEach(a => { const o=document.createElement('option'); o.value=a; o.textContent=a; ccAgencySel.appendChild(o); });
   const ccStatuses = [...new Set(ccData.map(r=>r.status).filter(Boolean))].sort();
   ccStatuses.forEach(s => { const o=document.createElement('option'); o.value=s; o.textContent=s; ccSel.appendChild(o); });
+  const ccCnNumbers = [...new Set(ccData.map(r=>r.cnNumber).filter(Boolean))].sort();
+  ccCnNumbers.forEach(c => { const o=document.createElement('option'); o.value=c; o.textContent=c; ccCnSel.appendChild(o); });
 }
 
 function renderTracker(){
@@ -531,9 +536,11 @@ function renderConfirmed(){
   const q = document.getElementById('ccSearch').value.toLowerCase();
   const agency = document.getElementById('ccAgencyFilter').value;
   const status = document.getElementById('ccStatusFilter').value;
+  const cnFilter = document.getElementById('ccCnFilter').value.toLowerCase();
   const filtered = ccData.filter(r => {
     if(agency && r.agency !== agency) return false;
     if(status && r.status !== status) return false;
+    if(cnFilter && !String(r.cnNumber||'').toLowerCase().includes(cnFilter)) return false;
     if(q){
       const hay = [r.id, r.order, r.agency].join(' ').toLowerCase();
       if(!hay.includes(q)) return false;
@@ -549,7 +556,7 @@ function renderConfirmed(){
       ? `<a href="${r.creditNote.url}" target="_blank" rel="noopener" title="${(r.creditNote.text||'').replace(/"/g,'&quot;')}" style="color:var(--blue);text-decoration:underline;font-family:'IBM Plex Mono',monospace;font-size:11px;">View CN ↗</a>`
       : (r.creditNote && r.creditNote.text ? r.creditNote.text : '<span style="color:var(--stamp);font-size:11px;">—</span>');
     tr.innerHTML = `
-      <td>${claimIdCell(r.id)}</td><td>${r.order}</td><td>${r.reportedDate}</td><td>${r.agency}</td>
+      <td>${claimIdCell(r.id)}</td><td>${r.order}</td><td>${r.deadlineAgency || '—'}</td><td>${r.agency}</td>
       <td>${r.incidentType}</td><td>${fmtPHP(r.cost)}</td>
       <td><span class="pill default">${r.status||'—'}</span></td>
       <td>${r.financeRemarks || '—'}</td>
@@ -561,7 +568,7 @@ function renderConfirmed(){
 }
 
 ['whSearch','whAgencyFilter','whStatusFilter'].forEach(id => document.getElementById(id).addEventListener('input', renderTracker));
-['ccSearch','ccAgencyFilter','ccStatusFilter'].forEach(id => document.getElementById(id).addEventListener('input', renderConfirmed));
+['ccSearch','ccAgencyFilter','ccStatusFilter','ccCnFilter'].forEach(id => document.getElementById(id).addEventListener('input', renderConfirmed));
 
 // ---- Live refresh via Google Sheets "Publish to web" CSV export ----
 // Numbers/status/dates come live from the published CSV. IR Link / Credit Note
@@ -732,9 +739,11 @@ function getFilteredCcData(){
   const q = document.getElementById('ccSearch').value.toLowerCase();
   const agency = document.getElementById('ccAgencyFilter').value;
   const status = document.getElementById('ccStatusFilter').value;
+  const cnFilter = document.getElementById('ccCnFilter').value.toLowerCase();
   return ccData.filter(r => {
     if(agency && r.agency !== agency) return false;
     if(status && r.status !== status) return false;
+    if(cnFilter && !String(r.cnNumber||'').toLowerCase().includes(cnFilter)) return false;
     if(q){
       const hay = [r.id, r.order, r.agency].join(' ').toLowerCase();
       if(!hay.includes(q)) return false;
@@ -753,8 +762,8 @@ document.getElementById('downloadWhBtn').addEventListener('click', () => {
 
 document.getElementById('downloadCcBtn').addEventListener('click', () => {
   const rows = getFilteredCcData();
-  const headers = ['Claim ID','Order #','Reported Date','Agency','Incident Type','Cost (PHP)','Status','Finance Remarks','CN Number'];
-  const data = rows.map(r => [r.id, r.order, r.reportedDate, r.agency, r.incidentType, r.cost, r.status, r.financeRemarks, r.cnNumber]);
+  const headers = ['Claim ID','Order #','Deadline for Agency Response','Agency','Incident Type','Cost (PHP)','Status','Invoice No.','CN Number'];
+  const data = rows.map(r => [r.id, r.order, r.deadlineAgency, r.agency, r.incidentType, r.cost, r.status, r.financeRemarks, r.cnNumber]);
   const date = new Date().toISOString().slice(0,10);
   downloadCsv(`confirmed_claims_${date}.csv`, headers, data);
 });
