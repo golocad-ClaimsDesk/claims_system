@@ -312,6 +312,14 @@ function fmtPHP(n){
   return '₱' + Number(n).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
 }
 
+const FRESHDESK_BASE = 'https://help.golocad.com/a/tickets/';
+function claimIdCell(id){
+  if(!id) return '—';
+  const isTicketNumber = /^\d+$/.test(String(id).trim());
+  if(!isTicketNumber) return id; // locally logged incidents (e.g. "LOCAL-...") aren't real tickets
+  return `<a href="${FRESHDESK_BASE}${id}" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:underline;" title="Open Freshdesk ticket #${id}">${id} ↗</a>`;
+}
+
 // ---- Tabs ----
 document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', () => {
@@ -475,7 +483,7 @@ function renderTracker(){
     const tr = document.createElement('tr');
     const proofLinks = buildProofLinks(r);
     tr.innerHTML = `
-      <td>${r.id}</td>
+      <td>${claimIdCell(r.id)}</td>
       <td>${r.order}</td>
       <td>${r.dateReported || '—'}</td>
       <td>${r.agency}</td>
@@ -526,7 +534,7 @@ function renderConfirmed(){
       ? `<a href="${r.creditNote.url}" target="_blank" rel="noopener" title="${(r.creditNote.text||'').replace(/"/g,'&quot;')}" style="color:var(--blue);text-decoration:underline;font-family:'IBM Plex Mono',monospace;font-size:11px;">View CN ↗</a>`
       : (r.creditNote && r.creditNote.text ? r.creditNote.text : '<span style="color:var(--stamp);font-size:11px;">—</span>');
     tr.innerHTML = `
-      <td>${r.id}</td><td>${r.order}</td><td>${r.reportedDate}</td><td>${r.agency}</td>
+      <td>${claimIdCell(r.id)}</td><td>${r.order}</td><td>${r.reportedDate}</td><td>${r.agency}</td>
       <td>${r.incidentType}</td><td>${fmtPHP(r.cost)}</td>
       <td><span class="pill default">${r.status||'—'}</span></td>
       <td>${r.financeRemarks || '—'}</td>
