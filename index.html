@@ -321,25 +321,73 @@ document.querySelectorAll('.tab').forEach(tab => {
 });
 
 // ---- Dashboard ----
+let _charts = {};
+function destroyChart(key){
+  if(_charts[key]){ _charts[key].destroy(); _charts[key] = null; }
+}
+
+function computeDashboardData(){
+  const whA = whData.filter(r => r.agency !== 'All');
+  const totalIncidents = whData.length;
+  const estCostTotal = whData.reduce((s,r) => s + (r.estCost || 0), 0);
+  const confirmedValue = ccData.reduce((s,r) => s + (r.cost || 0), 0);
+  const rejected = whData.filter(r => r.currentStatus === 'Rejected').length;
+
+  const statusByAgency = {};
+  whA.forEach(r => {
+    const a = r.agency || 'Unknown';
+    if(!statusByAgency[a]) statusByAgency[a] = {};
+    const s = r.currentStatus || 'Unknown';
+    statusByAgency[a][s] = (statusByAgency[a][s] || 0) + 1;
+  });
+
+  const monthly = {};
+  whData.forEach(r => {
+    if(!r.dateReported) return;
+    const m = r.dateReported.slice(0,7); // YYYY-MM
+    if(!monthly[m]) monthly[m] = { count: 0, cost: 0 };
+    monthly[m].count += 1;
+    monthly[m].cost += (r.estCost || 0);
+  });
+
+  const ccStatus = {};
+  ccData.forEach(r => {
+    const s = r.status || 'Unknown';
+    ccStatus[s] = (ccStatus[s] || 0) + 1;
+  });
+
+  const incidentType = {};
+  whData.forEach(r => {
+    if(!r.incidentType) return;
+    incidentType[r.incidentType] = (incidentType[r.incidentType] || 0) + 1;
+  });
+
+  return {
+    kpi: { totalIncidents, estCostTotal, confirmedValue, rejected },
+    statusByAgency, monthly, ccStatus, incidentType
+  };
+}
+
 function renderDashboard(){
   Chart.defaults.color = '#8FA398';
   Chart.defaults.borderColor = 'rgba(255,255,255,0.08)';
   Chart.defaults.font.family = "'Inter', sans-serif";
-  const d = PAYLOAD.dashboard;
+  const d = computeDashboardData();
   document.getElementById('kpiTotal').textContent = d.kpi.totalIncidents;
   document.getElementById('kpiCost').textContent = fmtPHP(d.kpi.estCostTotal);
   document.getElementById('kpiConfirmed').textContent = fmtPHP(d.kpi.confirmedValue);
   const ccTotal = Object.values(d.ccStatus).reduce((a,b)=>a+b,0);
   const billedCount = d.ccStatus['Billed (CN PROVIDED)'] || 0;
-  const billedCost = PAYLOAD.confirmedClaims
+  const billedCost = ccData
     .filter(r => r.status === 'Billed (CN PROVIDED)')
     .reduce((sum, r) => sum + (r.cost || 0), 0);
   document.getElementById('kpiRecovery').textContent = (ccTotal ? Math.round((billedCount/ccTotal)*100) : 0) + '%';
   document.getElementById('kpiRecoveryCost').textContent = fmtPHP(billedCost);
-  document.getElementById('kpiRejected').textContent = Math.round((d.kpi.rejected/d.kpi.totalIncidents)*100) + '%';
+  document.getElementById('kpiRejected').textContent = (d.kpi.totalIncidents ? Math.round((d.kpi.rejected/d.kpi.totalIncidents)*100) : 0) + '%';
 
   const agencies = Object.keys(d.statusByAgency);
-  new Chart(document.getElementById('agencyChart'), {
+  destroyChart('agency');
+  _charts.agency = new Chart(document.getElementById('agencyChart'), {
     type:'bar',
     data:{
       labels: agencies,
@@ -353,21 +401,24 @@ function renderDashboard(){
   });
 
   const months = Object.keys(d.monthly).sort();
-  new Chart(document.getElementById('trendChart'), {
+  destroyChart('trend');
+  _charts.trend = new Chart(document.getElementById('trendChart'), {
     type:'line',
     data:{labels:months, datasets:[{label:'Incidents', data:months.map(m=>d.monthly[m].count), borderColor:'#24D467', backgroundColor:'rgba(36,212,103,0.12)', fill:true, tension:.3, pointRadius:4, pointBackgroundColor:'#24D467'}]},
     options:{responsive:true, plugins:{legend:{display:false}}, scales:{x:{grid:{display:false}}, y:{beginAtZero:true, grid:{color:'rgba(255,255,255,0.08)'}}}}
   });
 
   const ccLabels = Object.keys(d.ccStatus);
-  new Chart(document.getElementById('statusChart'), {
+  destroyChart('status');
+  _charts.status = new Chart(document.getElementById('statusChart'), {
     type:'doughnut',
     data:{labels:ccLabels, datasets:[{data:ccLabels.map(l=>d.ccStatus[l]), backgroundColor:['#24D467','#F2B84D','#5AC3FF','#B98BF0']}]},
     options:{responsive:true, plugins:{legend:{position:'bottom', labels:{font:{size:10.5}}}}}
   });
 
   const typeEntries = Object.entries(d.incidentType).sort((a,b)=>b[1]-a[1]).slice(0,8);
-  new Chart(document.getElementById('typeChart'), {
+  destroyChart('type');
+  _charts.type = new Chart(document.getElementById('typeChart'), {
     type:'bar',
     data:{labels:typeEntries.map(e=>e[0].length>30?e[0].slice(0,30)+'…':e[0]), datasets:[{data:typeEntries.map(e=>e[1]), backgroundColor:'#5CE897'}]},
     options:{indexAxis:'y', responsive:true, plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true, grid:{color:'rgba(255,255,255,0.08)'}}, y:{grid:{display:false}}}}
@@ -601,6 +652,7 @@ document.getElementById('refreshBtn').addEventListener('click', async () => {
     whData = whRows.map(r => mapCsvRowToWhEntry(r, whLinkLookup));
     ccData = ccRows.map(r => mapCsvRowToCcEntry(r, ccLinkLookup));
 
+    renderDashboard();
     renderTracker();
     renderConfirmed();
     populateFilters();
