@@ -223,6 +223,7 @@
     <div class="view" id="view-confirmed">
       <div class="toolbar">
         <input type="text" id="ccSearch" placeholder="Search claim ID, order #, agency...">
+        <select id="ccAgencyFilter"><option value="">All agencies</option></select>
         <select id="ccStatusFilter"><option value="">All statuses</option></select>
         <button class="btn ghost" id="downloadCcBtn">⬇ Download CSV</button>
       </div>
@@ -453,9 +454,11 @@ function statusPillClass(s){
 function populateFilters(){
   const aSel = document.getElementById('whAgencyFilter');
   const sSel = document.getElementById('whStatusFilter');
+  const ccAgencySel = document.getElementById('ccAgencyFilter');
   const ccSel = document.getElementById('ccStatusFilter');
   aSel.innerHTML = '<option value="">All agencies</option>';
   sSel.innerHTML = '<option value="">All statuses</option>';
+  ccAgencySel.innerHTML = '<option value="">All agencies</option>';
   ccSel.innerHTML = '<option value="">All statuses</option>';
 
   const agencies = [...new Set(whData.map(r=>r.agency).filter(Boolean))].sort();
@@ -463,6 +466,8 @@ function populateFilters(){
   agencies.forEach(a => { const o=document.createElement('option'); o.value=a; o.textContent=a; aSel.appendChild(o); });
   statuses.forEach(s => { const o=document.createElement('option'); o.value=s; o.textContent=s; sSel.appendChild(o); });
 
+  const ccAgencies = [...new Set(ccData.map(r=>r.agency).filter(Boolean))].sort();
+  ccAgencies.forEach(a => { const o=document.createElement('option'); o.value=a; o.textContent=a; ccAgencySel.appendChild(o); });
   const ccStatuses = [...new Set(ccData.map(r=>r.status).filter(Boolean))].sort();
   ccStatuses.forEach(s => { const o=document.createElement('option'); o.value=s; o.textContent=s; ccSel.appendChild(o); });
 }
@@ -524,8 +529,10 @@ function buildProofLinks(r){
 
 function renderConfirmed(){
   const q = document.getElementById('ccSearch').value.toLowerCase();
+  const agency = document.getElementById('ccAgencyFilter').value;
   const status = document.getElementById('ccStatusFilter').value;
   const filtered = ccData.filter(r => {
+    if(agency && r.agency !== agency) return false;
     if(status && r.status !== status) return false;
     if(q){
       const hay = [r.id, r.order, r.agency].join(' ').toLowerCase();
@@ -554,7 +561,7 @@ function renderConfirmed(){
 }
 
 ['whSearch','whAgencyFilter','whStatusFilter'].forEach(id => document.getElementById(id).addEventListener('input', renderTracker));
-['ccSearch','ccStatusFilter'].forEach(id => document.getElementById(id).addEventListener('input', renderConfirmed));
+['ccSearch','ccAgencyFilter','ccStatusFilter'].forEach(id => document.getElementById(id).addEventListener('input', renderConfirmed));
 
 // ---- Live refresh via Google Sheets "Publish to web" CSV export ----
 // Numbers/status/dates come live from the published CSV. IR Link / Credit Note
@@ -723,8 +730,10 @@ function getFilteredWhData(){
 
 function getFilteredCcData(){
   const q = document.getElementById('ccSearch').value.toLowerCase();
+  const agency = document.getElementById('ccAgencyFilter').value;
   const status = document.getElementById('ccStatusFilter').value;
   return ccData.filter(r => {
+    if(agency && r.agency !== agency) return false;
     if(status && r.status !== status) return false;
     if(q){
       const hay = [r.id, r.order, r.agency].join(' ').toLowerCase();
