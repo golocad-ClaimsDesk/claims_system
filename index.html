@@ -45,6 +45,26 @@
   }
   .brand-row{display:flex;align-items:center;gap:10px;}
   .brand-row img{height:22px;width:auto;display:block;}
+  .locad-badge{
+    display:inline-block;
+    background:#060A06;
+    border:1px solid var(--ledger-line);
+    border-radius:10px;
+    padding:14px 20px 12px;
+  }
+  .locad-badge-logo{
+    width:150px;height:30px;
+    background-color:#24D467;
+    -webkit-mask-image:url('https://golocad.com/images/LOCAD-LOGO-WHITE.svg');
+    mask-image:url('https://golocad.com/images/LOCAD-LOGO-WHITE.svg');
+    -webkit-mask-repeat:no-repeat; mask-repeat:no-repeat;
+    -webkit-mask-position:left center; mask-position:left center;
+    -webkit-mask-size:contain; mask-size:contain;
+  }
+  .locad-badge-subtitle{
+    font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:14px;
+    color:#fff;letter-spacing:.06em;margin-top:6px;
+  }
   .eyebrow{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--stamp);}
   h1{font-family:'Space Grotesk',sans-serif;font-size:20px;font-weight:700;letter-spacing:.01em;margin:4px 0 0;color:var(--ink);}
 
@@ -162,11 +182,11 @@
   <div class="shell">
     <div class="topbar">
       <div>
-        <div class="brand-row">
-          <img src="https://golocad.com/images/LOCAD-LOGO-WHITE.svg" alt="Locad" onerror="this.style.display='none'">
-          <div class="eyebrow">Cabuyao Warehouse · Claims Desk</div>
+        <div class="locad-badge">
+          <div class="locad-badge-logo"></div>
+          <div class="locad-badge-subtitle">CLAIMS SYSTEM</div>
         </div>
-        <h1>CLAIMS SYSTEM</h1>
+        <div class="eyebrow" style="margin-top:8px;">Cabuyao Warehouse · Claims Desk</div>
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
         <div class="tabs">
