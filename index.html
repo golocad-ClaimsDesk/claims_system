@@ -8,7 +8,7 @@
 
   :root{
     --ink:#EAF1EC;
-    --paper:#0B0F0C;
+    --paper:#060A06;
     --panel:#12170F;
     --ledger-line:#263229;
     --amber:#24D467;
@@ -714,7 +714,9 @@ function computeEodData(dateStr){
   const byAgency = {};
   todays.forEach(r => {
     if(!r.agency || r.agency === 'All') return;
-    byAgency[r.agency] = (byAgency[r.agency] || 0) + (r.estCost || 0);
+    if(!byAgency[r.agency]) byAgency[r.agency] = { count: 0, amount: 0 };
+    byAgency[r.agency].count += 1;
+    byAgency[r.agency].amount += (r.estCost || 0);
   });
   return { n: todays.length, hits, misses, byAgency };
 }
@@ -724,7 +726,9 @@ function computeEodLmData(dateStr){
   const by3pl = {};
   todays.forEach(r => {
     if(!r.lm3pl) return;
-    by3pl[r.lm3pl] = (by3pl[r.lm3pl] || 0) + (r.declaredValue || 0);
+    if(!by3pl[r.lm3pl]) by3pl[r.lm3pl] = { count: 0, amount: 0 };
+    by3pl[r.lm3pl].count += 1;
+    by3pl[r.lm3pl].amount += (r.declaredValue || 0);
   });
   return { n: todays.length, by3pl };
 }
@@ -776,10 +780,10 @@ function renderEodReport(){
   if(entries.length === 0){
     container.innerHTML = '<div class="line-row"><span class="line-label" style="color:var(--stamp);">No claims filed on this date</span></div>';
   } else {
-    entries.forEach(([agency, amt]) => {
+    entries.forEach(([agency, info]) => {
       const row = document.createElement('div');
       row.className = 'line-row eod-agency-row';
-      row.innerHTML = `<span class="line-label">${agency}</span><input class="amt" data-agency="${agency}" value="${amt.toFixed(2)}">`;
+      row.innerHTML = `<span class="line-label">${agency} <span style="color:var(--stamp);font-family:'IBM Plex Mono',monospace;font-size:11px;">(${info.count} claim${info.count===1?'':'s'})</span></span><input class="amt" data-agency="${agency}" data-count="${info.count}" value="${info.amount.toFixed(2)}">`;
       container.appendChild(row);
     });
   }
@@ -793,10 +797,10 @@ function renderEodReport(){
   if(lmEntries.length === 0){
     lmContainer.innerHTML = '<div class="line-row"><span class="line-label" style="color:var(--stamp);">No LM claims escalated on this date</span></div>';
   } else {
-    lmEntries.forEach(([threePl, amt]) => {
+    lmEntries.forEach(([threePl, info]) => {
       const row = document.createElement('div');
       row.className = 'line-row eod-lm-row';
-      row.innerHTML = `<span class="line-label">${threePl}</span><input class="amt" data-3pl="${threePl}" value="${amt.toFixed(2)}">`;
+      row.innerHTML = `<span class="line-label">${threePl} <span style="color:var(--stamp);font-family:'IBM Plex Mono',monospace;font-size:11px;">(${info.count} claim${info.count===1?'':'s'})</span></span><input class="amt" data-3pl="${threePl}" data-count="${info.count}" value="${info.amount.toFixed(2)}">`;
       lmContainer.appendChild(row);
     });
   }
@@ -815,11 +819,11 @@ function buildEodPlainText(){
   const files = document.getElementById('eodFilesCount').value;
 
   const agencyLines = Array.from(document.querySelectorAll('.eod-agency-row .amt'))
-    .map(inp => `${inp.dataset.agency}: ${fmtPHP(parseFloat(inp.value)||0)}`);
+    .map(inp => `${inp.dataset.agency} (${inp.dataset.count} claim${inp.dataset.count==='1'?'':'s'}): ${fmtPHP(parseFloat(inp.value)||0)}`);
   const filingLines = agencyLines.length === 0 ? 'No claims filed today' : agencyLines.join('\n');
 
   const lmLines = Array.from(document.querySelectorAll('.eod-lm-row .amt'))
-    .map(inp => `${inp.dataset['3pl']}: ${fmtPHP(parseFloat(inp.value)||0)}`);
+    .map(inp => `${inp.dataset['3pl']} (${inp.dataset.count} claim${inp.dataset.count==='1'?'':'s'}): ${fmtPHP(parseFloat(inp.value)||0)}`);
   const lmFilingLines = lmLines.length === 0 ? 'No LM claims escalated today' : lmLines.join('\n');
   const lmTotal = document.getElementById('eodLmTotal').textContent;
 
