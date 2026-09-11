@@ -210,6 +210,13 @@
         <div class="kpi"><div class="lbl">Rejection rate</div><div class="val red" id="kpiRejected">—</div></div>
       </div>
 
+      <div class="section-title">LM Claims Summary</div>
+      <div class="kpi-grid">
+        <div class="kpi"><div class="lbl">LM Claims Filed</div><div class="val" id="kpiLmFiled">—</div><div class="lbl" id="kpiLmFiledAmt" style="margin-top:4px;font-size:12px;"></div></div>
+        <div class="kpi"><div class="lbl">LM Collected</div><div class="val teal" id="kpiLmCollected">—</div><div class="lbl" id="kpiLmCollectedAmt" style="margin-top:4px;color:var(--teal);font-size:12px;"></div></div>
+        <div class="kpi"><div class="lbl">LM For Collection</div><div class="val" id="kpiLmForCollection" style="color:var(--gold);">—</div><div class="lbl" id="kpiLmForCollectionAmt" style="margin-top:4px;color:var(--gold);font-size:12px;"></div></div>
+      </div>
+
       <div class="section-title">Confirmed claims billing status</div>
       <div class="chart-box"><canvas id="statusChart" height="200"></canvas></div>
 
@@ -471,9 +478,18 @@ function computeDashboardData(){
     incidentType[r.incidentType] = (incidentType[r.incidentType] || 0) + 1;
   });
 
+  const lmStatusGroups = { 'Claims Filed': {count:0, amount:0}, 'Collected': {count:0, amount:0}, 'For Collection': {count:0, amount:0}, 'Ongoing Claim': {count:0, amount:0} };
+  lmData.forEach(r => {
+    const s = r.claimsStatus;
+    if(!s) return;
+    if(!lmStatusGroups[s]) lmStatusGroups[s] = {count:0, amount:0};
+    lmStatusGroups[s].count += 1;
+    lmStatusGroups[s].amount += (r.declaredValue || 0);
+  });
+
   return {
     kpi: { totalIncidents, estCostTotal, confirmedValue, rejected },
-    statusByAgency, monthly, ccStatus, incidentType
+    statusByAgency, monthly, ccStatus, incidentType, lmStatusGroups
   };
 }
 
@@ -493,6 +509,14 @@ function renderDashboard(){
   document.getElementById('kpiRecovery').textContent = (ccTotal ? Math.round((billedCount/ccTotal)*100) : 0) + '%';
   document.getElementById('kpiRecoveryCost').textContent = fmtPHP(billedCost);
   document.getElementById('kpiRejected').textContent = (d.kpi.totalIncidents ? Math.round((d.kpi.rejected/d.kpi.totalIncidents)*100) : 0) + '%';
+
+  const lmg = d.lmStatusGroups;
+  document.getElementById('kpiLmFiled').textContent = lmg['Claims Filed'].count;
+  document.getElementById('kpiLmFiledAmt').textContent = fmtPHP(lmg['Claims Filed'].amount);
+  document.getElementById('kpiLmCollected').textContent = lmg['Collected'].count;
+  document.getElementById('kpiLmCollectedAmt').textContent = fmtPHP(lmg['Collected'].amount);
+  document.getElementById('kpiLmForCollection').textContent = lmg['For Collection'].count;
+  document.getElementById('kpiLmForCollectionAmt').textContent = fmtPHP(lmg['For Collection'].amount);
 
   const agencies = Object.keys(d.statusByAgency);
   destroyChart('agency');
