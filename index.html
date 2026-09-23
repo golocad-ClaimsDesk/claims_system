@@ -214,9 +214,11 @@
 
       <div class="section-title">LM Claims Summary</div>
       <div class="kpi-grid">
+        <div class="kpi"><div class="lbl">Total LM Filing</div><div class="val" id="kpiLmTotal">—</div><div class="lbl" id="kpiLmTotalAmt" style="margin-top:4px;font-size:12px;"></div></div>
         <div class="kpi"><div class="lbl">LM Claims Filed</div><div class="val" id="kpiLmFiled">—</div><div class="lbl" id="kpiLmFiledAmt" style="margin-top:4px;font-size:12px;"></div></div>
         <div class="kpi"><div class="lbl">LM Collected</div><div class="val teal" id="kpiLmCollected">—</div><div class="lbl" id="kpiLmCollectedAmt" style="margin-top:4px;color:var(--teal);font-size:12px;"></div></div>
         <div class="kpi"><div class="lbl">LM For Collection</div><div class="val" id="kpiLmForCollection" style="color:var(--gold);">—</div><div class="lbl" id="kpiLmForCollectionAmt" style="margin-top:4px;color:var(--gold);font-size:12px;"></div></div>
+        <div class="kpi"><div class="lbl">LM Denied</div><div class="val red" id="kpiLmDenied">—</div><div class="lbl" id="kpiLmDeniedPct" style="margin-top:4px;color:var(--red);font-size:12px;"></div></div>
       </div>
 
       <div class="section-title">Confirmed claims billing status</div>
@@ -484,18 +486,21 @@ function computeDashboardData(){
     incidentType[r.incidentType] = (incidentType[r.incidentType] || 0) + 1;
   });
 
-  const lmStatusGroups = { 'Claims Filed': {count:0, amount:0}, 'Collected': {count:0, amount:0}, 'For Collection': {count:0, amount:0}, 'Ongoing Claim': {count:0, amount:0} };
-  lmData.forEach(r => {
+  const lmData2026 = lmData.filter(r => r.escalationDate && r.escalationDate.startsWith('2026'));
+  const lmStatusGroups = { 'Claims Filed': {count:0, amount:0}, 'Collected': {count:0, amount:0}, 'For Collection': {count:0, amount:0}, 'Ongoing Claim': {count:0, amount:0}, 'Claims Denied': {count:0, amount:0} };
+  lmData2026.forEach(r => {
     const s = r.claimsStatus;
     if(!s) return;
     if(!lmStatusGroups[s]) lmStatusGroups[s] = {count:0, amount:0};
     lmStatusGroups[s].count += 1;
     lmStatusGroups[s].amount += (r.declaredValue || 0);
   });
+  const lmTotalCount = lmData2026.length;
+  const lmTotalAmount = lmData2026.reduce((s,r) => s + (r.declaredValue || 0), 0);
 
   return {
     kpi: { totalIncidents, estCostTotal, confirmedValue, rejected },
-    statusByAgency, monthly, ccStatus, incidentType, lmStatusGroups
+    statusByAgency, monthly, ccStatus, incidentType, lmStatusGroups, lmTotalCount, lmTotalAmount
   };
 }
 
@@ -517,12 +522,19 @@ function renderDashboard(){
   document.getElementById('kpiRejected').textContent = (d.kpi.totalIncidents ? Math.round((d.kpi.rejected/d.kpi.totalIncidents)*100) : 0) + '%';
 
   const lmg = d.lmStatusGroups;
+  const lmTotal = d.lmTotalCount || 0;
+  const pct = (n) => lmTotal ? Math.round((n/lmTotal)*100) : 0;
+
+  document.getElementById('kpiLmTotal').textContent = lmTotal;
+  document.getElementById('kpiLmTotalAmt').textContent = fmtPHP(d.lmTotalAmount);
   document.getElementById('kpiLmFiled').textContent = lmg['Claims Filed'].count;
   document.getElementById('kpiLmFiledAmt').textContent = fmtPHP(lmg['Claims Filed'].amount);
-  document.getElementById('kpiLmCollected').textContent = lmg['Collected'].count;
+  document.getElementById('kpiLmCollected').textContent = lmg['Collected'].count + ` (${pct(lmg['Collected'].count)}%)`;
   document.getElementById('kpiLmCollectedAmt').textContent = fmtPHP(lmg['Collected'].amount);
   document.getElementById('kpiLmForCollection').textContent = lmg['For Collection'].count;
   document.getElementById('kpiLmForCollectionAmt').textContent = fmtPHP(lmg['For Collection'].amount);
+  document.getElementById('kpiLmDenied').textContent = lmg['Claims Denied'].count;
+  document.getElementById('kpiLmDeniedPct').textContent = pct(lmg['Claims Denied'].count) + '% of total';
 
   const agencies = Object.keys(d.statusByAgency);
   destroyChart('agency');
