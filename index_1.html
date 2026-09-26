@@ -434,11 +434,32 @@ function claimIdCell(id){
   return `<a href="${FRESHDESK_BASE}${id}" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:underline;" title="Open Freshdesk ticket #${id}">${id} ↗</a>`;
 }
 
-const PARTNERHUB_BASE = 'https://partner.golocad.com/partnerhub/outbound/manage-b2c-orders-v2/';
+const PARTNERHUB_LIST_URL = 'https://partner.golocad.com/partnerhub/outbound/manage-b2c-orders-v2/list';
 function prepackingVideoCell(orderNumber){
   if(!orderNumber) return '<span style="color:var(--stamp);font-size:11px;">—</span>';
-  return `<a href="${PARTNERHUB_BASE}${encodeURIComponent(orderNumber)}" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:underline;font-family:'IBM Plex Mono',monospace;font-size:11px;" title="Open order in Partner Hub">Video ↗</a>`;
+  const safe = String(orderNumber).replace(/"/g,'&quot;');
+  return `<button type="button" class="ph-video-btn" data-order="${safe}" style="background:none;border:none;padding:0;cursor:pointer;color:var(--blue);text-decoration:underline;font-family:'IBM Plex Mono',monospace;font-size:11px;" title="Copy order # and open Partner Hub search">Video ↗</button>`;
 }
+
+async function handlePrepackingVideoClick(orderNumber, btn){
+  try{
+    await navigator.clipboard.writeText(orderNumber);
+    const original = btn.textContent;
+    btn.textContent = 'Copied! Paste in search →';
+    window.open(PARTNERHUB_LIST_URL, '_blank', 'noopener');
+    setTimeout(() => { btn.textContent = original; }, 2500);
+  }catch(e){
+    alert('Could not copy automatically. Order #: ' + orderNumber);
+    window.open(PARTNERHUB_LIST_URL, '_blank', 'noopener');
+  }
+}
+
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.ph-video-btn');
+  if(btn){
+    handlePrepackingVideoClick(btn.dataset.order, btn);
+  }
+});
 
 // ---- Tabs ----
 document.querySelectorAll('.tab').forEach(tab => {
