@@ -297,7 +297,7 @@ Total Credit Note Request: ₱1,770.32"></textarea>
         <table>
           <thead><tr>
             <th>Claim ID</th><th>Order #</th><th>Date Reported</th><th>Agency</th><th>Brand</th><th>Personnel</th>
-            <th>Incident type</th><th>Est. cost</th><th>72h window</th><th>Status</th><th>IR Link</th>
+            <th>Incident type</th><th>Est. cost</th><th>72h window</th><th>Status</th><th>IR Link</th><th>Prepacking Video</th>
           </tr></thead>
           <tbody id="whTableBody"></tbody>
         </table>
@@ -432,6 +432,12 @@ function claimIdCell(id){
   const isTicketNumber = /^\d+$/.test(String(id).trim());
   if(!isTicketNumber) return id; // locally logged incidents (e.g. "LOCAL-...") aren't real tickets
   return `<a href="${FRESHDESK_BASE}${id}" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:underline;" title="Open Freshdesk ticket #${id}">${id} ↗</a>`;
+}
+
+const PARTNERHUB_BASE = 'https://partner.golocad.com/partnerhub/outbound/manage-b2c-orders-v2/';
+function prepackingVideoCell(orderNumber){
+  if(!orderNumber) return '<span style="color:var(--stamp);font-size:11px;">—</span>';
+  return `<a href="${PARTNERHUB_BASE}${encodeURIComponent(orderNumber)}" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:underline;font-family:'IBM Plex Mono',monospace;font-size:11px;" title="Open order in Partner Hub">Video ↗</a>`;
 }
 
 // ---- Tabs ----
@@ -663,6 +669,7 @@ function renderTracker(){
       <td>${r.window72 || '—'}</td>
       <td><span class="pill ${statusPillClass(r.currentStatus)}">${r.currentStatus||'—'}</span></td>
       <td>${proofLinks}</td>
+      <td>${prepackingVideoCell(r.order)}</td>
     `;
     tbody.appendChild(tr);
   });
