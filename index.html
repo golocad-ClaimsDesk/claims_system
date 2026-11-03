@@ -859,16 +859,44 @@ function trackLmCollected(){
   }catch(e){}
 }
 
-function computeEodLmCollected(dateStr){
-  const rows = lmData.filter(r => isLmCollected(r) && r.collectedOn === dateStr);
-  const by3pl = {};
-  rows.forEach(r => {
-    const k = r.lm3pl || 'Unspecified';
-    if(!by3pl[k]) by3pl[k] = { count: 0, amount: 0 };
-    by3pl[k].count += 1;
-    by3pl[k].amount += lmCollectedAmount(r);
+// Collected list read from the 'CLAIMS LM (Auto)' tab: Collected Date = column O.
+let lmCollectedAuto = null; // null until a live refresh has loaded the tab
+function buildLmCollectedFromAuto(grid){
+  const hdr = (grid[1] || []).map(h => String(h || '').replace(/\s+/g,' ').trim().toLowerCase());
+  const col = (name, fallback) => { const i = hdr.indexOf(name); return i >= 0 ? i : fallback; };
+  const iDate = col('collected date', 14), iAmt = col('amt received', 18),
+        iClm = col('claimable amount', 9), iDecl = col('declared / insured price', 7),
+        iOrd = col('order #/ tn', 3), iBrand = col('brand', 1), i3pl = 2;
+  const out = [];
+  grid.slice(2).forEach(r => {
+    const d = dateStr(r[iDate]);
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(d)) return;
+    const a = num(r[iAmt]), c = num(r[iClm]), dv = num(r[iDecl]);
+    out.push({
+      date: d, lm3pl: String(r[i3pl] || '').trim() || 'Unspecified',
+      brand: String(r[iBrand] || ''), orderTn: String(r[iOrd] || ''),
+      amount: (a && a > 0) ? a : ((c && c > 0) ? c : (dv && dv > 0 ? dv : 0))
+    });
   });
-  return { n: rows.length, by3pl };
+  return out;
+}
+
+function computeEodLmCollected(dateStr){
+  const by3pl = {};
+  let n = 0;
+  if(lmCollectedAuto !== null){
+    lmCollectedAuto.filter(x => x.date === dateStr).forEach(x => {
+      if(!by3pl[x.lm3pl]) by3pl[x.lm3pl] = { count: 0, amount: 0 };
+      by3pl[x.lm3pl].count += 1; by3pl[x.lm3pl].amount += x.amount; n++;
+    });
+  } else {
+    lmData.filter(r => isLmCollected(r) && r.collectedOn === dateStr).forEach(r => {
+      const k = r.lm3pl || 'Unspecified';
+      if(!by3pl[k]) by3pl[k] = { count: 0, amount: 0 };
+      by3pl[k].count += 1; by3pl[k].amount += lmCollectedAmount(r); n++;
+    });
+  }
+  return { n, by3pl };
 }
 
 function computeEodLmData(dateStr){
@@ -969,7 +997,7 @@ function renderEodReport(){
   collContainer.innerHTML = '';
   const collEntries = Object.entries(dColl.by3pl);
   if(collEntries.length === 0){
-    collContainer.innerHTML = '<div class="line-row"><span class="line-label" style="color:var(--stamp);">No LM claims collected on this date</span></div>';
+    collContainer.innerHTML = '<div class="line-row"><span class="line-label" style="color:var(--stamp);">' + (lmCollectedAuto === null ? 'Sign in &amp; Refresh to load Collected Date (CLAIMS LM (Auto), col O)' : 'No LM claims collected on this date') + '</span></div>';
   } else {
     collEntries.forEach(([threePl, info]) => {
       const row = document.createElement('div');
@@ -1217,6 +1245,11 @@ async function doRefresh(){
       fetchSheetValues('CONFIRMED CLAIMS'),
       fetchSheetValues('CLAIMS LM')
     ]);
+    // Collected Date lives on 'CLAIMS LM (Auto)' (col O); a failure here must not break the refresh
+    try{
+      const autoGrid = await fetchSheetValues("'CLAIMS LM (Auto)'");
+      lmCollectedAuto = buildLmCollectedFromAuto(autoGrid);
+    }catch(e){ console.warn('CLAIMS LM (Auto) not loaded:', e); }
 
     const whRows = rowsFromValuesGrid(whGrid, 1).filter(r => r['Claim ID under Ticket#'] || r['Order Number']);
     const ccRows = rowsFromValuesGrid(ccGrid, 1).filter(r => r['Claim ID under Ticket#'] || r['Order Number']);
