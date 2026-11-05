@@ -268,6 +268,9 @@
         <div id="eodLmCollRows"></div>
         <div class="line-row" style="margin-top:4px;"><span class="line-label" style="font-weight:600;">Total LM Claims Collected</span><span class="line-value" id="eodLmCollTotal" style="font-size:15px;color:var(--teal);">—</span></div>
 
+        <div class="line-row" style="border-bottom:none;padding-top:14px;padding-bottom:0;"><span class="line-label" style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--stamp);">Freshdesk Tickets</span></div>
+        <div class="line-row"><span class="line-label">Open tickets</span><input class="amt" id="eodTixOpen" type="number" min="0" step="1" placeholder="0" style="width:90px;"></div>
+        <div class="line-row"><span class="line-label">Closed tickets</span><input class="amt" id="eodTixClosed" type="number" min="0" step="1" placeholder="0" style="width:90px;"></div>
         <div class="line-row" style="border-bottom:none;padding-top:14px;padding-bottom:0;"><span class="line-label" style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--stamp);">Accomplishments</span></div>
         <div style="margin:8px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
           <button id="eodGmailBtn" type="button" class="btn" style="font-size:12px;">📧 Load from my Sent emails</button>
@@ -1037,6 +1040,9 @@ function buildEodPlainText(){
   const lmCollected = collLines.length === 0 ? 'No LM claims collected today' : collLines.join('\n');
   const lmCollTotal = document.getElementById('eodLmCollTotal').textContent;
 
+  const tixOpen = (document.getElementById('eodTixOpen').value || '0').trim();
+  const tixClosed = (document.getElementById('eodTixClosed').value || '0').trim();
+
   return `CLAIMS EOD REPORT – ${dateLabel}
 
 Compliance Summary
@@ -1057,6 +1063,10 @@ LM Claims Collected
 ${lmCollected}
 Total LM Claims Collected: ${lmCollTotal}
 
+Freshdesk Tickets
+Open: ${tixOpen}
+Closed: ${tixClosed}
+
 Accomplishments
 ${acc || '(none entered)'}
 
@@ -1071,6 +1081,21 @@ document.getElementById('eodSectionToggle').addEventListener('click', () => {
   content.style.display = isHidden ? 'block' : 'none';
   icon.textContent = isHidden ? '▾' : '▸';
 });
+function tixKey(){ return 'claimsEodTix_' + (document.getElementById('eodDate').value || ''); }
+function loadTix(){
+  let v = {};
+  try{ v = JSON.parse(localStorage.getItem(tixKey()) || '{}'); }catch(e){}
+  document.getElementById('eodTixOpen').value = v.open !== undefined ? v.open : '';
+  document.getElementById('eodTixClosed').value = v.closed !== undefined ? v.closed : '';
+}
+function saveTix(){
+  try{ localStorage.setItem(tixKey(), JSON.stringify({
+    open: document.getElementById('eodTixOpen').value,
+    closed: document.getElementById('eodTixClosed').value })); }catch(e){}
+}
+document.getElementById('eodTixOpen').addEventListener('input', saveTix);
+document.getElementById('eodTixClosed').addEventListener('input', saveTix);
+document.getElementById('eodDate').addEventListener('change', loadTix);
 document.getElementById('eodDate').addEventListener('change', renderEodReport);
 document.getElementById('eodRecalcBtn').addEventListener('click', renderEodReport);
 document.getElementById('eodTogglePreview').addEventListener('click', (e) => {
@@ -1528,6 +1553,7 @@ document.getElementById('saveModal').addEventListener('click', async () => {
   renderConfirmed();
   renderLm();
   document.getElementById('eodDate').value = todayLocalStr();
+  loadTix();
   renderEodReport();
 })();
 </script>
