@@ -269,6 +269,7 @@
         <div class="line-row" style="margin-top:4px;"><span class="line-label" style="font-weight:600;">Total LM Claims Collected</span><span class="line-value" id="eodLmCollTotal" style="font-size:15px;color:var(--teal);">—</span></div>
 
         <div class="line-row" style="border-bottom:none;padding-top:14px;padding-bottom:0;"><span class="line-label" style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--stamp);">Freshdesk Tickets</span></div>
+        <div class="line-row"><span class="line-label">Received tickets</span><input class="amt" id="eodTixReceived" type="number" min="0" step="1" placeholder="0" style="width:90px;"></div>
         <div class="line-row"><span class="line-label">Open tickets</span><input class="amt" id="eodTixOpen" type="number" min="0" step="1" placeholder="0" style="width:90px;"></div>
         <div class="line-row"><span class="line-label">Closed tickets</span><input class="amt" id="eodTixClosed" type="number" min="0" step="1" placeholder="0" style="width:90px;"></div>
         <div class="line-row" style="border-bottom:none;padding-top:14px;padding-bottom:0;"><span class="line-label" style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--stamp);">Accomplishments</span></div>
@@ -1040,6 +1041,7 @@ function buildEodPlainText(){
   const lmCollected = collLines.length === 0 ? 'No LM claims collected today' : collLines.join('\n');
   const lmCollTotal = document.getElementById('eodLmCollTotal').textContent;
 
+  const tixReceived = (document.getElementById('eodTixReceived').value || '0').trim();
   const tixOpen = (document.getElementById('eodTixOpen').value || '0').trim();
   const tixClosed = (document.getElementById('eodTixClosed').value || '0').trim();
 
@@ -1064,6 +1066,7 @@ ${lmCollected}
 Total LM Claims Collected: ${lmCollTotal}
 
 Freshdesk Tickets
+Received: ${tixReceived}
 Open: ${tixOpen}
 Closed: ${tixClosed}
 
@@ -1085,14 +1088,17 @@ function tixKey(){ return 'claimsEodTix_' + (document.getElementById('eodDate').
 function loadTix(){
   let v = {};
   try{ v = JSON.parse(localStorage.getItem(tixKey()) || '{}'); }catch(e){}
+  document.getElementById('eodTixReceived').value = v.received !== undefined ? v.received : '';
   document.getElementById('eodTixOpen').value = v.open !== undefined ? v.open : '';
   document.getElementById('eodTixClosed').value = v.closed !== undefined ? v.closed : '';
 }
 function saveTix(){
   try{ localStorage.setItem(tixKey(), JSON.stringify({
+    received: document.getElementById('eodTixReceived').value,
     open: document.getElementById('eodTixOpen').value,
     closed: document.getElementById('eodTixClosed').value })); }catch(e){}
 }
+document.getElementById('eodTixReceived').addEventListener('input', saveTix);
 document.getElementById('eodTixOpen').addEventListener('input', saveTix);
 document.getElementById('eodTixClosed').addEventListener('input', saveTix);
 document.getElementById('eodDate').addEventListener('change', loadTix);
