@@ -1339,6 +1339,11 @@ async function doRefresh(){
       const dmGrid = await fetchSheetValues('Claims Damage by WH');
       const built = buildDmFromGrid(dmGrid);
       dmData = built.rows; dmWindow = built.window;
+      try{
+        const lastRow = Math.max(...built.rows.map(r => r.gi + 1), 2);
+        const [irL, phL] = await Promise.all([ fetchColumnLinks('Claims Damage by WH', built.irCol, lastRow), fetchColumnLinks('Claims Damage by WH', built.photoCol, lastRow) ]);
+        dmData.forEach(r => { if(irL[r.gi]) r.ir = irL[r.gi]; if(phL[r.gi]) r.photo = phL[r.gi]; });
+      }catch(e){ console.warn('Damage links not read:', e); }
       try{ localStorage.setItem('claimsDmCache', JSON.stringify({rows: dmData, window: dmWindow})); }catch(e){}
       dmNote = `, ${dmData.length} damage-by-WH`;
     }catch(e){ console.warn('Claims Damage by WH not loaded:', e); dmNote = ' (Claims Damage by WH not loaded: ' + e.message.slice(0,90) + ')'; }
@@ -1635,19 +1640,49 @@ function buildDmFromGrid(grid){
     }
   }
   const get = (row, k) => (ix[k] >= 0 && row[ix[k]] !== undefined && row[ix[k]] !== null) ? String(row[ix[k]]).trim() : '';
-  const rows = grid.slice(1).filter(r => (r || []).length && (get(r,'date') || get(r,'brand') || get(r,'order'))).map(r => ({
+  const rows = grid.map((r, gi) => ({ r, gi })).slice(1).filter(o => (o.r || []).length && (get(o.r,'date') || get(o.r,'brand') || get(o.r,'order'))).map(o => { const r = o.r; return {
+    gi: o.gi,
     date: dateStr(get(r,'date')), wh: get(r,'wh'), email: get(r,'email'), ref: get(r,'ref'), origin: get(r,'origin'),
     brand: get(r,'brand'), order: get(r,'order'), sku: get(r,'sku'), product: get(r,'product'), reason: get(r,'reason'),
     condition: get(r,'condition'), photo: get(r,'photo'), qty: dmNum(get(r,'qty')), age: dmNum(get(r,'age')), unitCost: dmNum(get(r,'unitCost')),
     disposition: get(r,'disposition'), resolution: get(r,'resolution'), cs: get(r,'cs'), resolved: dateStr(get(r,'resolved')), ir: get(r,'ir')
-  }));
+  }; });
   rows.sort((a,b) => (b.date || '').localeCompare(a.date || ''));
-  return { rows, window: win };
+  return { rows, window: win, irCol: ix.ir, photoCol: ix.photo };
+}
+
+// Links attached to a cell (hyperlink / smart chip / part of the text) are NOT in the plain values - read them from the grid data.
+function colLetter(i){ let s = ''; i = i + 1; while(i > 0){ const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; }
+function cellLink(cell){
+  if(!cell) return '';
+  if(cell.hyperlink) return cell.hyperlink;
+  const runs = cell.textFormatRuns || [];
+  for(const t of runs){ if(t.format && t.format.link && t.format.link.uri) return t.format.link.uri; }
+  const chips = cell.chipRuns || [];
+  for(const c of chips){ const u = c.chip && c.chip.richLinkProperties && c.chip.richLinkProperties.uri; if(u) return u; }
+  const v = String(cell.formattedValue || '');
+  const m = v.match(/https?:\/\/\S+/);
+  return m ? m[0] : '';
+}
+async function fetchColumnLinks(sheetName, colIdx, lastRow){
+  if(colIdx === undefined || colIdx < 0) return {};
+  const L = colLetter(colIdx);
+  const range = encodeURIComponent(`'${sheetName}'!${L}1:${L}${lastRow}`);
+  const fields = encodeURIComponent('sheets(data(rowData(values(formattedValue,hyperlink,textFormatRuns(format(link)),chipRuns(chip(richLinkProperties(uri)))))))');
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}?ranges=${range}&includeGridData=true&fields=${fields}`;
+  const res = await fetch(url, { headers: { 'Authorization': `Bearer ${googleAccessToken}` } });
+  if(!res.ok) throw new Error(`Sheets API error (${res.status}) reading links`);
+  const json = await res.json();
+  const rd = (((json.sheets || [])[0] || {}).data || [])[0];
+  const out = {};
+  ((rd && rd.rowData) || []).forEach((row, i) => { const u = cellLink((row.values || [])[0]); if(u) out[i] = u; });
+  return out;
 }
 function dmEsc(v){ return String(v === null || v === undefined ? '' : v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function dmLink(u){
   const t = String(u || '').trim();
-  return /^https?:\/\//i.test(t) ? `<a href="${dmEsc(t)}" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:underline;font-family:'IBM Plex Mono',monospace;font-size:11px;">View ↗</a>` : '<span style="color:var(--stamp);font-size:11px;">—</span>';
+  if(/^https?:\/\//i.test(t)) return `<a href="${dmEsc(t)}" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:underline;font-family:'IBM Plex Mono',monospace;font-size:11px;">View ↗</a>`;
+  return t ? `<span style="font-size:11px;">${dmEsc(t)}</span>` : '<span style="color:var(--stamp);font-size:11px;">—</span>';
 }
 function getFilteredDmData(){
   const q = document.getElementById('dmSearch').value.toLowerCase();
