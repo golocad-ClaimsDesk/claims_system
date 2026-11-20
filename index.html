@@ -195,6 +195,7 @@
           <div class="tab" data-view="tracker">Tracker</div>
           <div class="tab" data-view="confirmed">Confirmed Claims</div>
           <div class="tab" data-view="lm">Claims LM</div>
+          <div class="tab" data-view="damage">Claims Damage by WH</div>
         </div>
         <button class="btn ghost" id="googleSignInBtn" style="font-size:11px;">🔐 Sign in with Google</button>
         <button class="btn" id="refreshBtn" style="font-size:11px;">↻ Refresh from sheet</button>
@@ -220,6 +221,17 @@
         <div class="kpi"><div class="lbl">LM For Collection</div><div class="val" id="kpiLmForCollection" style="color:var(--gold);">—</div><div class="lbl" id="kpiLmForCollectionAmt" style="margin-top:4px;color:var(--gold);font-size:12px;"></div></div>
         <div class="kpi"><div class="lbl">LM Denied</div><div class="val red" id="kpiLmDenied">—</div><div class="lbl" id="kpiLmDeniedPct" style="margin-top:4px;color:var(--red);font-size:12px;"></div></div>
       </div>
+
+      <div class="section-title">Claims volume comparison — Wrong Fulfilment vs LM vs Damage by WH</div>
+      <div class="kpi-grid" id="cmpKpis">
+        <div class="kpi"><div class="lbl">Claims WH (Wrong Fulfilment)</div><div class="val" id="cmpWhCount">—</div><div class="lbl" id="cmpWhSub" style="margin-top:4px;font-size:12px;"></div></div>
+        <div class="kpi"><div class="lbl">Claims LM</div><div class="val" id="cmpLmCount">—</div><div class="lbl" id="cmpLmSub" style="margin-top:4px;font-size:12px;"></div></div>
+        <div class="kpi"><div class="lbl">Claims Damage by WH</div><div class="val" id="cmpDmCount">—</div><div class="lbl" id="cmpDmSub" style="margin-top:4px;font-size:12px;"></div></div>
+      </div>
+      <div class="row-count" id="cmpNote"></div>
+      <div class="chart-box"><canvas id="cmpTotalChart" height="170"></canvas></div>
+      <div class="section-title" style="font-size:13px;">Monthly claims by type</div>
+      <div class="chart-box"><canvas id="cmpMonthChart" height="200"></canvas></div>
 
       <div class="section-title">Confirmed claims billing status</div>
       <div class="chart-box"><canvas id="statusChart" height="200"></canvas></div>
@@ -359,6 +371,28 @@ Total Credit Note Request: ₱1,770.32"></textarea>
       </div>
     </div>
 
+    <!-- CLAIMS DAMAGE BY WH -->
+    <div class="view" id="view-damage">
+      <div class="toolbar">
+        <input type="text" id="dmSearch" placeholder="Search order #, SKU, product, brand...">
+        <select id="dmBrandFilter"><option value="">All brands</option></select>
+        <select id="dmResFilter"><option value="">All resolution status</option></select>
+        <select id="dmWhFilter"><option value="yes">Damage by WH: Yes only</option><option value="all">Damage by WH: Yes + No</option><option value="no">Damage by WH: No only</option></select>
+        <button class="btn ghost" id="downloadDmBtn">⬇ Download CSV</button>
+      </div>
+      <div class="row-count" id="dmCount"></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Date Escalated</th><th>Brand</th><th>Origin</th><th>ASN / Order #</th><th>SKU</th><th>Product</th>
+            <th>Reason</th><th>Condition</th><th>Qty</th><th>Unit Cost</th><th>Total Value</th><th>Damage by WH</th><th>Age (days)</th>
+            <th>Disposition</th><th>Resolution</th><th>CS Remarks</th><th>Date Resolved</th><th>Photo/Video</th><th>IR Link</th>
+          </tr></thead>
+          <tbody id="dmTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
     <div class="footnote">
       Snapshot as of <b id="snapshotDate">—</b>. This is not a live connection — ask Claude to "refresh the claims system" whenever you want updated numbers, and re-upload the new file. New rows logged here in the Tracker are saved to your browser only, not written back to the sheet.
     </div>
@@ -413,6 +447,9 @@ let whData = sortByDateDesc(PAYLOAD.claimsWH.filter(r => !isChargedToLocad(r)), 
 let ccData = sortByDateDesc(PAYLOAD.confirmedClaims, 'reportedDate');
 let lmData = sortByDateDesc(PAYLOAD.claimsLM || [], 'escalationDate');
 const LOCAL_KEY = 'claims_system_local_entries';
+// Claims Damage by WH: loaded live from the sheet (and cached in this browser so it still shows after a reload)
+let dmWindow = null;   // {start,end} read from the tab's Start/End date cells
+let dmData = (function(){ try{ const c = JSON.parse(localStorage.getItem('claimsDmCache') || 'null'); if(c && Array.isArray(c.rows)){ dmWindow = c.window || null; return c.rows; } }catch(e){} return []; })();
 
 async function loadLocalEntries(){
   try{
@@ -629,6 +666,7 @@ function renderDashboard(){
     data:{labels:typeEntries.map(e=>e[0].length>30?e[0].slice(0,30)+'…':e[0]), datasets:[{data:typeEntries.map(e=>e[1]), backgroundColor:'#5CE897'}]},
     options:{indexAxis:'y', responsive:true, plugins:{legend:{display:false}, datalabels:{display:false}}, scales:{x:{beginAtZero:true, grid:{color:'rgba(255,255,255,0.08)'}}, y:{grid:{display:false}}}}
   });
+  renderCompare();
 }
 
 // ---- Tracker ----
@@ -1183,6 +1221,16 @@ async function fetchSheetValues(sheetName){
   return json.values || [];
 }
 
+// The tab was renamed from 'CLAIMS WH' to 'CLAIMS WH (Wrong Fulfillment)': try each known name so a rename never stops the refresh again
+async function fetchSheetValuesAny(names){
+  let lastErr = null;
+  for(const nm of names){
+    try{ return await fetchSheetValues(nm); }
+    catch(e){ lastErr = e; if(!/\(400\)|\(404\)/.test(String(e.message))) throw e; }
+  }
+  throw lastErr || new Error('Sheet not found: ' + names.join(' / '));
+}
+
 function rowsFromValuesGrid(grid, headerRowIndex){
   const headers = grid[headerRowIndex] || [];
   return grid.slice(headerRowIndex + 1)
@@ -1276,7 +1324,7 @@ async function doRefresh(){
     PAYLOAD.confirmedClaims.forEach(r => { if(r.creditNote) ccLinkLookup[r.id] = r.creditNote; });
 
     const [whGrid, ccGrid, lmGrid] = await Promise.all([
-      fetchSheetValues('CLAIMS WH'),
+      fetchSheetValuesAny(['CLAIMS WH (Wrong Fulfillment)', 'CLAIMS WH']),
       fetchSheetValues('CONFIRMED CLAIMS'),
       fetchSheetValues('CLAIMS LM')
     ]);
@@ -1285,6 +1333,15 @@ async function doRefresh(){
       const autoGrid = await fetchSheetValues("'CLAIMS LM (Auto)'");
       lmCollectedAuto = buildLmCollectedFromAuto(autoGrid);
     }catch(e){ console.warn('CLAIMS LM (Auto) not loaded:', e); }
+
+    let dmNote = '';
+    try{
+      const dmGrid = await fetchSheetValues('Claims Damage by WH');
+      const built = buildDmFromGrid(dmGrid);
+      dmData = built.rows; dmWindow = built.window;
+      try{ localStorage.setItem('claimsDmCache', JSON.stringify({rows: dmData, window: dmWindow})); }catch(e){}
+      dmNote = `, ${dmData.length} damage-by-WH`;
+    }catch(e){ console.warn('Claims Damage by WH not loaded:', e); dmNote = ' (Claims Damage by WH not loaded: ' + e.message.slice(0,90) + ')'; }
 
     const whRows = rowsFromValuesGrid(whGrid, 1).filter(r => r['Claim ID under Ticket#'] || r['Order Number']);
     const ccRows = rowsFromValuesGrid(ccGrid, 1).filter(r => r['Claim ID under Ticket#'] || r['Order Number']);
@@ -1301,9 +1358,10 @@ async function doRefresh(){
     renderTracker();
     renderConfirmed();
     renderLm();
+    renderDamage();
     renderEodReport();
     populateFilters();
-    updateConnectStatus(`✓ Refreshed — ${whData.length} incidents, ${ccData.length} confirmed claims, ${lmData.length} LM claims live.`, 'var(--teal)');
+    updateConnectStatus(`✓ Refreshed — ${whData.length} incidents, ${ccData.length} confirmed claims, ${lmData.length} LM claims${dmNote} live.`, 'var(--teal)');
   }catch(err){
     updateConnectStatus('✗ Refresh failed: ' + err.message, 'var(--red)');
   }finally{
@@ -1548,6 +1606,151 @@ document.getElementById('saveModal').addEventListener('click', async () => {
   document.querySelector('.tab[data-view="tracker"]').click();
 });
 
+// ---- Claims Damage by WH ----------------------------------------------------
+// Columns are found by the START of their header text (the sheet headers are long and may change slightly).
+const DM_COLS = {
+  date:'date escalated', wh:'damage by warehouse', email:'email address', ref:'reference code', origin:'origin', brand:'brand',
+  order:'asn', sku:'actual sku', product:'product name', reason:'reason for', condition:'item condition', photo:'photo/video',
+  qty:'affected quantity', age:'age in quarantine', disposition:'status on disposition', resolution:'status on resolution',
+  cs:'cs remarks', resolved:'date resolved', ir:'ir link', unitCost:'unit cost'
+};
+function dmNum(v){ const t = String(v === null || v === undefined ? '' : v).replace(/[^0-9.\-]/g, ''); if(t === '' || t === '-' || t === '.') return null; const n = parseFloat(t); return isNaN(n) ? null : n; }
+function dmValue(r){ return (r.unitCost === null || r.unitCost === undefined || r.qty === null || r.qty === undefined) ? null : r.unitCost * r.qty; }
+// 'Damage by Warehouse (yes/no)': only 'Yes' rows are claims. If that column is empty everywhere, every row counts.
+function isDmClaim(r){ return !dmData.some(x => x.wh) || /^y/i.test(r.wh || ''); }
+function dmNorm(h){ return String(h || '').replace(/\s+/g, ' ').trim().toLowerCase(); }
+function buildDmFromGrid(grid){
+  const hdr = (grid[0] || []).map(dmNorm);
+  const ix = {};
+  Object.keys(DM_COLS).forEach(k => { ix[k] = hdr.findIndex(h => h && h.indexOf(DM_COLS[k]) === 0); });
+  if(ix.date < 0 && ix.brand < 0) throw new Error("couldn't find the 'DATE ESCALATED' / 'BRAND' headers in row 1");
+  // the tab shows only the dates between its Start date / End date cells (to the right of the table)
+  let win = null;
+  for(let r = 0; r < Math.min(grid.length, 6); r++){
+    const row = grid[r] || [];
+    for(let c = 0; c < row.length; c++){
+      const v = dmNorm(row[c]);
+      if(v.indexOf('start date') === 0){ win = win || {}; win.start = dateStr(row[c+1]); }
+      if(v.indexOf('end date') === 0){ win = win || {}; win.end = dateStr(row[c+1]); }
+    }
+  }
+  const get = (row, k) => (ix[k] >= 0 && row[ix[k]] !== undefined && row[ix[k]] !== null) ? String(row[ix[k]]).trim() : '';
+  const rows = grid.slice(1).filter(r => (r || []).length && (get(r,'date') || get(r,'brand') || get(r,'order'))).map(r => ({
+    date: dateStr(get(r,'date')), wh: get(r,'wh'), email: get(r,'email'), ref: get(r,'ref'), origin: get(r,'origin'),
+    brand: get(r,'brand'), order: get(r,'order'), sku: get(r,'sku'), product: get(r,'product'), reason: get(r,'reason'),
+    condition: get(r,'condition'), photo: get(r,'photo'), qty: dmNum(get(r,'qty')), age: dmNum(get(r,'age')), unitCost: dmNum(get(r,'unitCost')),
+    disposition: get(r,'disposition'), resolution: get(r,'resolution'), cs: get(r,'cs'), resolved: dateStr(get(r,'resolved')), ir: get(r,'ir')
+  }));
+  rows.sort((a,b) => (b.date || '').localeCompare(a.date || ''));
+  return { rows, window: win };
+}
+function dmEsc(v){ return String(v === null || v === undefined ? '' : v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function dmLink(u){
+  const t = String(u || '').trim();
+  return /^https?:\/\//i.test(t) ? `<a href="${dmEsc(t)}" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:underline;font-family:'IBM Plex Mono',monospace;font-size:11px;">View ↗</a>` : '<span style="color:var(--stamp);font-size:11px;">—</span>';
+}
+function getFilteredDmData(){
+  const q = document.getElementById('dmSearch').value.toLowerCase();
+  const brand = document.getElementById('dmBrandFilter').value;
+  const res = document.getElementById('dmResFilter').value;
+  const whf = document.getElementById('dmWhFilter').value;
+  return dmData.filter(r => {
+    if(whf === 'yes' && !isDmClaim(r)) return false;
+    if(whf === 'no' && (isDmClaim(r) && dmData.some(x => x.wh))) return false;
+    if(brand && r.brand !== brand) return false;
+    if(res && r.resolution !== res) return false;
+    if(q && ![r.order, r.sku, r.product, r.brand, r.ref].join(' ').toLowerCase().includes(q)) return false;
+    return true;
+  });
+}
+function populateDmFilters(){
+  const bSel = document.getElementById('dmBrandFilter'), rSel = document.getElementById('dmResFilter');
+  const bv = bSel.value, rv = rSel.value;
+  bSel.innerHTML = '<option value="">All brands</option>';
+  rSel.innerHTML = '<option value="">All resolution status</option>';
+  [...new Set(dmData.map(r => r.brand).filter(Boolean))].sort().forEach(a => { const o = document.createElement('option'); o.value = a; o.textContent = a; bSel.appendChild(o); });
+  [...new Set(dmData.map(r => r.resolution).filter(Boolean))].sort().forEach(a => { const o = document.createElement('option'); o.value = a; o.textContent = a; rSel.appendChild(o); });
+  bSel.value = bv; rSel.value = rv;
+}
+function renderDamage(){
+  populateDmFilters();
+  const filtered = getFilteredDmData();
+  const winTxt = dmWindow && (dmWindow.start || dmWindow.end) ? ` · sheet date range: ${dmWindow.start || '?'} to ${dmWindow.end || '?'} (end not included)` : '';
+  document.getElementById('dmCount').textContent = dmData.length
+    ? `${filtered.length} of ${dmData.length} rows · total value ${fmtPHP(filtered.reduce((t,r) => t + (dmValue(r) || 0), 0))}${winTxt}`
+    : 'No data yet — click "Sign in with Google", then "Refresh from sheet" to load Claims Damage by WH.';
+  const tbody = document.getElementById('dmTableBody');
+  tbody.innerHTML = '';
+  filtered.slice(0,400).forEach(r => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${dmEsc(r.date) || '—'}</td><td>${dmEsc(r.brand)}</td><td>${dmEsc(r.origin)}</td><td>${dmEsc(r.order)}</td>
+      <td>${dmEsc(r.sku)}</td><td>${dmEsc(r.product)}</td><td>${dmEsc(r.reason)}</td><td>${dmEsc(r.condition)}</td>
+      <td>${r.qty === null ? '—' : r.qty}</td><td>${fmtPHP(r.unitCost)}</td><td>${fmtPHP(dmValue(r))}</td><td>${dmEsc(r.wh) || '—'}</td><td>${r.age === null ? '—' : r.age}</td>
+      <td>${dmEsc(r.disposition) || '—'}</td><td>${r.resolution ? `<span class="pill default">${dmEsc(r.resolution)}</span>` : '—'}</td>
+      <td>${dmEsc(r.cs) || '—'}</td><td>${dmEsc(r.resolved) || '—'}</td><td>${dmLink(r.photo)}</td><td>${dmLink(r.ir)}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+['dmSearch','dmBrandFilter','dmResFilter','dmWhFilter'].forEach(id => document.getElementById(id).addEventListener('input', renderDamage));
+document.getElementById('downloadDmBtn').addEventListener('click', () => {
+  const rows = getFilteredDmData();
+  const headers = ['Date Escalated','Brand','Origin','ASN / Order #','SKU','Product','Reason','Condition','Qty','Unit Cost','Total Value','Damage by WH','Age (days)','Disposition','Resolution','CS Remarks','Date Resolved','Photo/Video','IR Link','Email'];
+  const data = rows.map(r => [r.date, r.brand, r.origin, r.order, r.sku, r.product, r.reason, r.condition, r.qty, r.unitCost, dmValue(r), r.wh, r.age, r.disposition, r.resolution, r.cs, r.resolved, r.photo, r.ir, r.email]);
+  downloadCsv(`claims_damage_by_wh_${todayLocalStr()}.csv`, headers, data);
+});
+
+// ---- Dashboard: which claim type is biggest? ----
+function computeCompare(){
+  const yr = r => /^2026/.test(r || '');
+  const sets = [
+    { key:'wh', label:'Claims WH (Wrong Fulfilment)', color:'#24D467', rows: whData.filter(r => yr(r.dateReported)), date: r => r.dateReported, amt: r => r.estCost || 0 },
+    { key:'lm', label:'Claims LM', color:'#5AC3FF', rows: lmData.filter(r => yr(r.escalationDate)), date: r => r.escalationDate, amt: r => r.declaredValue || 0 },
+    { key:'dm', label:'Claims Damage by WH', color:'#F2B84D', rows: dmData.filter(r => isDmClaim(r) && yr(r.date)), date: r => r.date, amt: r => dmValue(r) || 0 }
+  ];
+  sets.forEach(x => { x.count = x.rows.length; x.amount = x.amt ? x.rows.reduce((s,r) => s + x.amt(r), 0) : null; });
+  return sets;
+}
+function renderCompare(){
+  const sets = computeCompare();
+  const total = sets.reduce((s,x) => s + x.count, 0);
+  const top = sets.slice().sort((a,b) => b.count - a.count)[0];
+  const pctOf = x => total ? Math.round(x.count / total * 100) + '% of all claims' : '';
+  sets.forEach(x => {
+    const id = {wh:'cmpWh', lm:'cmpLm', dm:'cmpDm'}[x.key];
+    const loaded = x.key !== 'dm' || dmData.length > 0;
+    document.getElementById(id + 'Count').textContent = loaded ? x.count : '—';
+    const amt = fmtPHP(x.amount) + (x.key === 'dm' ? ' (unit cost × qty)' : '');
+    document.getElementById(id + 'Sub').textContent = loaded ? `${pctOf(x)} · ${amt}` : 'Sign in & Refresh to load';
+    document.getElementById(id + 'Count').style.color = (loaded && total && x === top) ? 'var(--gold)' : '';
+  });
+  const winTxt = dmWindow && (dmWindow.start || dmWindow.end) ? ` Damage by WH only covers ${dmWindow.start || '?'} to ${dmWindow.end || '?'} (the date range set in that tab).` : '';
+  document.getElementById('cmpNote').textContent = (dmData.length && total ? `Highest: ${top.label} (${top.count} of ${total} claims, 2026).` : 'Counts are 2026 claims by escalation / reported date.') + winTxt;
+
+  destroyChart('cmpTotal');
+  _charts.cmpTotal = new Chart(document.getElementById('cmpTotalChart'), {
+    type:'bar',
+    data:{ labels: sets.map(x => x.label), datasets:[{ data: sets.map(x => x.count), backgroundColor: sets.map(x => x.color), borderRadius:4 }] },
+    options:{ indexAxis:'y', responsive:true, plugins:{ legend:{display:false},
+      datalabels:{ color:'#E8F0EA', anchor:'end', align:'end', font:{ family:"'IBM Plex Mono', monospace", size:12, weight:'600' }, formatter: v => v } },
+      layout:{ padding:{ right:36 } },
+      scales:{ x:{ beginAtZero:true, grid:{color:'rgba(255,255,255,0.08)'} }, y:{ grid:{display:false} } } }
+  });
+
+  const monthSet = new Set();
+  sets.forEach(x => x.rows.forEach(r => { const d = x.date(r); if(d) monthSet.add(d.slice(0,7)); }));
+  const months = [...monthSet].sort();
+  destroyChart('cmpMonth');
+  _charts.cmpMonth = new Chart(document.getElementById('cmpMonthChart'), {
+    type:'bar',
+    data:{ labels: months, datasets: sets.map(x => ({ label: x.label, backgroundColor: x.color, borderRadius:3,
+      data: months.map(m => x.rows.filter(r => (x.date(r) || '').slice(0,7) === m).length) })) },
+    options:{ responsive:true, plugins:{ legend:{ position:'bottom', labels:{ font:{size:10.5} } },
+      datalabels:{ color:'#E8F0EA', anchor:'end', align:'end', font:{ size:10 }, formatter: v => v > 0 ? v : '' } },
+      scales:{ x:{ grid:{display:false} }, y:{ beginAtZero:true, grid:{color:'rgba(255,255,255,0.08)'} } } }
+  });
+}
+
 // ---- Init ----
 (async function init(){
   document.getElementById('snapshotDate').textContent = PAYLOAD.generatedAt;
@@ -1558,6 +1761,7 @@ document.getElementById('saveModal').addEventListener('click', async () => {
   renderTracker();
   renderConfirmed();
   renderLm();
+  renderDamage();
   document.getElementById('eodDate').value = todayLocalStr();
   loadTix();
   renderEodReport();
